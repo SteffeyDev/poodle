@@ -12,5 +12,5 @@ Working exploit code for the POODLE attack on SSLv3
 
 Add proper values to `config.json` 
 ```
-# ./start_mitm
+# sudo ./start_mitm
 ```
