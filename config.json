@@ -1,5 +1,7 @@
 {
 	"interface": "ens33",
 	"target": "192.168.1.164",
-	"router": "192.168.1.1"
+	"router": "192.168.1.1",
+	"attacker": "192.168.1.176",
+	"server": "poodle.encompassx.com"
 }

