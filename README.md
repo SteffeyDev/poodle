@@ -1,7 +1,7 @@
 # POODLE
 Working exploit code for the POODLE attack on SSLv3
 
-[![Watch the video](https://img.youtube.com/vi/TLn67ugV8Ec/maxresdefault.jpg)](https://youtu.be/TLn67ugV8Ec)
+[![Watch the video](/images/POODLE_video_youtube.png?raw=true)](https://youtu.be/TLn67ugV8Ec)
 
 ### Setup
 
