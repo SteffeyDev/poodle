@@ -103,8 +103,8 @@ with output(output_type='list', initial_len=6) as output_list:
 				output_list[5] = "Average number of requests: N/A"
 
 	def update_state_progress():
-		if not DEBUG:
-			output_list[0] = "Block Size: {}, POST Request length: {}".format(block_size, post_request_length) + (", OPTION Request length: {}".format(option_request_length) if config["skipOptions"] else "")
+		if not DEBUG and block_size is not None and post_request_length is not None:
+			output_list[0] = "Block Size: {}, POST Request length: {}".format(block_size, post_request_length) + (", OPTION Request length: {}".format(option_request_length) if option_request_length is not None else "")
 			current_index = get_current_index()
 			try:
 				output_list[1] = "Working on decrypting byte {} - Request #{}".format(current_index, number_of_requests[current_index])
