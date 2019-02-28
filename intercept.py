@@ -232,7 +232,7 @@ with output(output_type='list', initial_len=6) as output_list:
 					request_length_count[len(pkt)] = request_length_count[len(pkt)] + 1 if len(pkt) in request_length_count else 0
 					if request_length_count[len(pkt)] > 10:
 						post_request_length = len(pkt)
-					else
+					else:
 						return
 
 				# Stage 1: The JS client is sending packets of increasing length
