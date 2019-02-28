@@ -230,9 +230,10 @@ with output(output_type='list', initial_len=6) as output_list:
 				elif post_request_length is None:
 					log("POST Request Length: " + str(len(pkt)))
 					request_length_count[len(pkt)] = request_length_count[len(pkt)] + 1 if len(pkt) in request_length_count else 0
-					if request_length_count[len(pkt)] > 10:
+					if request_length_count[len(pkt)] > 4:
 						post_request_length = len(pkt)
 					else:
+						packet.accept()
 						return
 
 				# Stage 1: The JS client is sending packets of increasing length
