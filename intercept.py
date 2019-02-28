@@ -260,7 +260,8 @@ with output(output_type='list', initial_len=6) as output_list:
 						log("New POST Request Length: " + str(len(pkt)))
 						post_request_length = len(pkt)
 
-					number_of_requests[get_current_index()] += 1
+					if get_current_index() in number_of_requests:
+						number_of_requests[get_current_index()] += 1
 					update_state_progress()
 					log("Copying block to end")
 
