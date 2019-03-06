@@ -220,7 +220,7 @@ with output(output_type='list', initial_len=6) as output_list:
 			if TLS in pkt and get_field(pkt.getlayer(TLS), 'type') == "application_data":
 
 				# Need to make sure that the packets are sent by our JS agent, and one thing our JS agent does is send the same packets over and over...
-				request_length_count[len(pkt)] = request_length_count[len(pkt)] + 1 if len(pkt) in request_length_count else 0
+				request_length_count[len(pkt)] = request_length_count[len(pkt)] + 1 if len(pkt) in request_length_count else 1
 				if request_length_count[len(pkt)] < 5:
 					packet.accept()
 					return
@@ -240,19 +240,21 @@ with output(output_type='list', initial_len=6) as output_list:
 				# Stage 1: The JS client is sending packets of increasing length
 				if block_size is None:
 
-					if request_length_count[len(pkt)] > 4:
-						log("Got request length " + str(len(pkt)))
-						if ciphertext_length > 0:
-							data_padding_size_needed += 1
-							if len(pkt) > ciphertext_length:
-								block_size = len(pkt) - ciphertext_length
-								print_state(ciphertext_length)
-								log("Found block size: " + str(block_size))
-						else:
-							ciphertext_length = len(pkt)
+					log("Got request length " + str(len(pkt)))
+					if ciphertext_length > 0:
+						if len(pkt) > ciphertext_length:
+							block_size = len(pkt) - ciphertext_length
+							print_state(ciphertext_length)
+							log("Found block size: " + str(block_size))
+
+							# Get amount of padding needed by looking back and seeing how many requests were made before the first jump in request size
+							current_len = len(pkt)
+							while (current_len - block_size) in request_length_count:
+								current_len -= block_size
+							data_padding_size_needed = request_length_count[current_len]
+							log("Found padding length: " + str(data_padding_size_needed))
 					else:
-						packet.accept()
-						return
+						ciphertext_length = len(pkt)
 
 				# Stage 2: The JS client is sending the same packet repeatedly and waiting for us to decrypt it
 				else:
