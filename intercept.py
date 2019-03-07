@@ -9,6 +9,7 @@ from socketserver import ThreadingMixIn
 import threading
 import time
 from reprint import output
+import sys
 
 DEBUG = False
 
@@ -313,6 +314,8 @@ with output(output_type='list', initial_len=6) as output_list:
 				
 					# Store what was learned
 					secret[decrypted_byte_index] = decrypted_byte
+					if decrypted_byte_index == ciphertext_length - 1:
+						log_result_and_end()
 
 					# Reset all sessions
 					sessions = {}
@@ -398,6 +401,20 @@ with output(output_type='list', initial_len=6) as output_list:
 	nfqueue = NetfilterQueue()
 	nfqueue.bind(0, callback)
 
+	# Called when entire request is decrypted
+	def log_result_and_end():
+		plaintext = repr(''.join([ chr(secret[i]) if i in secret else '.' for i in range(ciphertext_length) ]))
+		out_file = open('plaintext.txt', 'w')
+		out_file.write(plaintext)
+		out_file.close()
+
+		nfqueue.unbind()
+		web_server.shutdown()
+		web_server_thread.join()
+		log_file.close()
+
+		sys.exit(0)
+
 	try:
 		web_server_thread.start()
 		nfqueue.run()
@@ -406,7 +423,6 @@ with output(output_type='list', initial_len=6) as output_list:
 
 	nfqueue.unbind()
 	web_server.shutdown()
-	#web_server.socket.close()
 	web_server_thread.join()
 	
 	log_file.close()
