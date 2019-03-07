@@ -35,7 +35,7 @@ data_padding_size_needed = 0
 block_size = None
 
 # For exploit stage
-block_to_move = 0 
+block_to_move = 1 
 current_offset = 0
 secret = {}
 count = 0
