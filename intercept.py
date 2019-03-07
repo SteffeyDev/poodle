@@ -403,6 +403,9 @@ with output(output_type='list', initial_len=6) as output_list:
 
 	# Called when entire request is decrypted
 	def log_result_and_end():
+		global secret
+		global ciphertext_length
+
 		plaintext = repr(''.join([ chr(secret[i]) if i in secret else '.' for i in range(ciphertext_length) ]))
 		out_file = open('plaintext.txt', 'w')
 		out_file.write(plaintext)
