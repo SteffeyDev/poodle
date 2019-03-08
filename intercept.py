@@ -9,7 +9,7 @@ from socketserver import ThreadingMixIn
 import threading
 import time
 from reprint import output
-import sys
+import os
 
 DEBUG = False
 
@@ -416,7 +416,7 @@ with output(output_type='list', initial_len=6) as output_list:
 		web_server_thread.join()
 		log_file.close()
 
-		sys.exit(0)
+		os._exit(0)
 
 	try:
 		web_server_thread.start()
