@@ -9,6 +9,7 @@ Working exploit code for the POODLE attack on SSLv3
 # sudo apt install python3 python3-pip build-essential python3-dev libnetfilter-queue-dev dsniff jq
 # pip3 install NetfilterQueue scapy reprint
 ```
+Only tested on Ubuntu 16.04, may not work on other distributions or versions.
 
 ### Usage
 
